@@ -1,0 +1,55 @@
+library(testthat)
+library(ACV)
+
+mn <- 40
+start <- c(2000, 1)
+frequency <- 4
+algorithm <- forecast::Arima
+m <- 36
+h <- 1
+v <- 1
+
+
+set.seed(1)
+y <- rnorm(mn)
+y <- ts(y, start = start, frequency = frequency)
+xreg <- cbind(y + rnorm(mn, 0, 0.1), rnorm(mn))
+Phi1 <- tsACV(y, algorithm, m, h = h, v = v, xreg = xreg)
+Phi1
+
+Phi <- Phi1
+rhoLimit <- 0.99
+
+
+
+temp <- infoPhi(Phi)
+K <- temp$K
+mn <- temp$mn
+m <- temp$m
+v <- temp$v
+h <- temp$h
+mh <- temp$mh
+J <- temp$J
+
+
+# Target <- sapply(1:K, function(k) {
+#     apply(!is.na(Phi - Phi[, k]), 2, sum, na.rm = T)
+# })
+# Target <- sapply(1:K, function(k) sum(Target[cbind((k):K, 1:(K - k + 1))]))
+
+Target <- 1 - 1 / (2 * stats::var(c(Phi), na.rm = T)) * sapply(1:K, function(k) {
+    apply((Phi - Phi[, k])^2, 2, mean, na.rm = T)
+})
+Target <- sapply(1:K, function(k) mean(Target[cbind((k):K, 1:(K - k + 1))]))
+Weights <- pmax(mh - (0:(K - 1)) * v, 0) * (K:1)
+
+moments <- function(par) {
+    return(ifelse(is.na(Target), 0, Target - par^(v * (0:(K - 1)))))
+}
+
+objective <- function(par) {
+    return(sum(moments(par)^2 * Weights))
+}
+
+fit <- stats::optimize(objective, interval = c(-rhoLimit, rhoLimit))
+rho <- fit$minimum
